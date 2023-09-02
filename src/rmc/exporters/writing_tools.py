@@ -46,6 +46,7 @@ class Pen:
         self.name = "Basic Pen"
         # initial stroke values
         self.stroke_linecap = "round"
+        self.stroke_linejoin = "round"
         self.stroke_opacity = 1
         self.stroke_width = base_width
         self.stroke_color = base_color_id
@@ -106,7 +107,7 @@ class Pen:
             return Mechanical_Pencil(width, color_id)
         # Highlighter
         elif pen_nr == 5 or pen_nr == 18:
-            width = 15
+            width = 29
             return Highlighter(width, color_id)
         # Erase area
         elif pen_nr == 8:
@@ -121,7 +122,7 @@ class Pen:
 class Fineliner(Pen):
     def __init__(self, base_width, base_color_id):
         super().__init__(base_width, base_color_id)
-        self.base_width = (base_width ** 2.1) * 1.3
+        self.base_width = base_width * 2
         self.name = "Fineliner"
 
 
@@ -183,8 +184,7 @@ class Pencil(Pen):
 class Mechanical_Pencil(Pen):
     def __init__(self, base_width, base_color_id):
         super().__init__(base_width, base_color_id)
-        self.base_width = self.base_width ** 2
-        self.base_opacity = 0.7
+        self.base_width = base_width * 2
         self.name = "Mechanical Pencil"
 
 
@@ -197,18 +197,21 @@ class Brush(Pen):
         self.name = "Brush"
 
     def get_segment_width(self, speed, direction, width, pressure, last_width):
-        segment_width = 0.7 * (((1 + (1.4 * pressure / 255)) * (width / 4)) - (0.5 * self.direction_to_tilt(direction)) - ((speed / 4) / 50))  # + (0.2 * last_width)
+        segment_width = width / 4
         return segment_width
 
     def get_segment_color(self, speed, direction, width, pressure, last_width):
-        intensity = ((pressure / 255) ** 1.5 - 0.2 * ((speed / 4) / 50)) * 1.5
-        intensity = self.cutoff(intensity)
         # using segment color not opacity because the dots interfere with each other.
-        # Color must be 255 rgb
-        rev_intensity = abs(intensity - 1)
-        segment_color = [int(rev_intensity * (255 - self.base_color[0])),
-                         int(rev_intensity * (255 - self.base_color[1])),
-                         int(rev_intensity * (255 - self.base_color[2]))]
+        if self.stroke_color == 2: # WHITE - which is always just white
+            segment_color = self.base_color
+        else:
+            # reduce intensity of color based on pressure and speed
+            intensity = ((pressure / 255) ** 1.5 - 0.2 * ((speed / 4) / 50)) * 1.5
+            intensity = self.cutoff(intensity)
+            rev_intensity = abs(intensity - 1)
+            segment_color = [int(rev_intensity * (255 - self.base_color[0])),
+                            int(rev_intensity * (255 - self.base_color[1])),
+                            int(rev_intensity * (255 - self.base_color[2]))]
 
         return "rgb"+str(tuple(segment_color))
 
@@ -217,6 +220,7 @@ class Highlighter(Pen):
     def __init__(self, base_width, base_color_id):
         super().__init__(base_width, base_color_id)
         self.stroke_linecap = "square"
+        self.stroke_linejoin = "bevel"
         self.base_opacity = 0.3
         self.stroke_opacity = 0.2
         self.name = "Highlighter"
@@ -245,5 +249,5 @@ class Caligraphy(Pen):
         self.name = "Calligraphy"
 
     def get_segment_width(self, speed, direction, width, pressure, last_width):
-        segment_width = 0.9 * (((1 + pressure / 255) * (width / 4)) - 0.3 * self.direction_to_tilt(direction)) + (0.1 * last_width)
+        segment_width = width / 4
         return segment_width

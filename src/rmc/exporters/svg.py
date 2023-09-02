@@ -4,6 +4,7 @@ Code originally from https://github.com/lschwetlick/maxio through
 https://github.com/chemag/maxio .
 """
 
+from io import TextIOWrapper
 import logging
 import math
 import string
@@ -46,9 +47,21 @@ SVG_HEADER = string.Template("""
         }
     ]]>
     </script>
+    <defs>
+        <filter x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox" id="pencilTexture">
+            <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="5" stitchTiles="stitch" result="f1">
+            </feTurbulence>
+            <feColorMatrix type="matrix" values="0 0 0 0 0, 0 0 0 0 0, 0 0 0 0 0, 0 0 0 -1.5 1.5" result="f2">
+            </feColorMatrix>
+            <feComposite operator="in" in2="f2b" in="SourceGraphic" result="f3">
+            </feComposite>
+            <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="3" result="noise">
+            </feTurbulence>
+            <feDisplacementMap xChannelSelector="R" yChannelSelector="G" scale="2.5" in="f3" result="f4">
+            </feDisplacementMap>
+        </filter>
+    </defs>
 """)
-
-
 XPOS_SHIFT = SCREEN_WIDTH / 2
 
 
@@ -104,31 +117,40 @@ def blocks_to_svg(blocks: Iterable[Block], output, debug=0):
     output.write('</svg>\n')
 
 
-def draw_stroke(block, output, svg_doc_info, debug):
+def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: SvgDocInfo, debug: bool):
     if debug > 0:
         print('----SceneLineItemBlock')
     # a SceneLineItemBlock contains a stroke
-    output.write(f'        <!-- SceneLineItemBlock item_id: {block.item_id} -->\n')
+    output.write(f'        <!-- SceneLineItemBlock item_id: {block.item.item_id} -->\n')
 
     # make sure the object is not empty
-    if block.value is None:
+    if block.item.value is None:
         return
+    
+    # pull the CRDT item out of the block (the stroke in this case)
+    item = block.item.value
 
     # initiate the pen
-    pen = Pen.create(block.value.tool.value, block.value.color.value, block.value.thickness_scale)
+    pen = Pen.create(item.tool.value, item.color.value, item.thickness_scale)
 
     # BEGIN stroke
-    output.write(f'        <!-- Stroke tool: {block.value.tool.name} color: {block.value.color.name} thickness_scale: {block.value.thickness_scale} -->\n')
+    output.write(f'        <!-- Stroke tool: {item.tool.name} color: {item.color.name} ({item.color.value}) thickness_scale: {item.thickness_scale} -->\n')
+    
+    if item.tool.name in set(['PENCIL_2', 'MECHANICAL_PENCIL_2']):
+        output.write('<g filter="url(#pencilTexture)">')
+    else:
+        output.write('<g>')
+
     output.write('        <polyline ')
     output.write(f'style="fill:none;stroke:{pen.stroke_color};stroke-width:{pen.stroke_width};opacity:{pen.stroke_opacity}" ')
-    output.write(f'stroke-linecap="{pen.stroke_linecap}" ')
+    output.write(f'stroke-linecap="{pen.stroke_linecap}" stroke-linejoin="{pen.stroke_linejoin}" ')
     output.write('points="')
 
     last_xpos = -1.
     last_ypos = -1.
     last_segment_width = 0
     # Iterate through the point to form a polyline
-    for point_id, point in enumerate(block.value.points):
+    for point_id, point in enumerate(item.points):
         # align the original position
         xpos = point.x + svg_doc_info.xpos_delta
         ypos = point.y + svg_doc_info.ypos_delta
@@ -150,11 +172,14 @@ def draw_stroke(block, output, svg_doc_info, debug):
             output.write('"/>\n')
             output.write('        <polyline ')
             output.write(f'style="fill:none; stroke:{segment_color} ;stroke-width:{segment_width:.3f};opacity:{segment_opacity}" ')
-            output.write(f'stroke-linecap="{pen.stroke_linecap}" ')
+            output.write(f'stroke-linecap="{pen.stroke_linecap}" stroke-linejoin="{pen.stroke_linejoin}" ')
             output.write('points="')
             if last_xpos != -1.:
                 # Join to previous segment
                 output.write(f'{last_xpos:.3f},{last_ypos:.3f} ')
+        else:
+            segment_width = last_segment_width
+        
         # store the last position
         last_xpos = xpos
         last_ypos = ypos
@@ -164,7 +189,7 @@ def draw_stroke(block, output, svg_doc_info, debug):
         output.write(f'{xpos:.3f},{ypos:.3f} ')
 
     # END stroke
-    output.write('" />\n')
+    output.write('" /></g>\n')
 
 
 def draw_text(block, output, svg_doc_info, debug):
@@ -216,11 +241,11 @@ def get_limits(blocks):
 
 def get_limits_stroke(block):
     # make sure the object is not empty
-    if block.value is None:
+    if block.item.value is None:
         return None, None, None, None
     xmin = xmax = None
     ymin = ymax = None
-    for point in block.value.points:
+    for point in block.item.value.points:
         xpos, ypos = point.x, point.y
         if xmin is None or xmin > xpos:
             xmin = xpos

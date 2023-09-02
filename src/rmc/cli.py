@@ -6,8 +6,7 @@ import io
 from pathlib import Path
 from contextlib import contextmanager
 import click
-from rmscene import read_blocks, write_blocks, TextFormat
-from rmscene.text import extract_text, simple_text_document
+from rmscene import read_blocks, write_blocks, simple_text_document
 from .exporters.svg import blocks_to_svg
 from .exporters.pdf import svg_to_pdf
 from .exporters.markdown import print_text
@@ -103,7 +102,8 @@ def convert_rm(filename: Path, to, fout):
         elif to == "blocks-data":
             pprint_file(f, fout, data=False)
         elif to == "markdown":
-            print_text(f, fout)
+            blocks = read_blocks(f)
+            print_text(blocks, fout)
         elif to == "svg":
             blocks = read_blocks(f)
             blocks_to_svg(blocks, fout)
