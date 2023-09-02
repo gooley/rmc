@@ -25,6 +25,7 @@ from rmscene import (
     SceneGroupItemBlock,
     SceneLineItemBlock,
 )
+from rmscene.text import TextDocument
 
 from .writing_tools import (
     Pen,
@@ -48,7 +49,7 @@ SVG_HEADER = string.Template("""
     ]]>
     </script>
     <defs>
-        <filter x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox" id="pencilTexture">
+        <filter x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox" id="mechPencilTexture">
             <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="5" stitchTiles="stitch" result="f1">
             </feTurbulence>
             <feColorMatrix type="matrix" values="0 0 0 0 0, 0 0 0 0 0, 0 0 0 0 0, 0 0 0 -1.5 1.5" result="f2">
@@ -58,6 +59,18 @@ SVG_HEADER = string.Template("""
             <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="3" result="noise">
             </feTurbulence>
             <feDisplacementMap xChannelSelector="R" yChannelSelector="G" scale="2.5" in="f3" result="f4">
+            </feDisplacementMap>
+        </filter>
+        <filter x="-2000%" y="-2000%" width="5000%" height="5000%" filterUnits="objectBoundingBox" id="pencilTexture">
+            <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="10" stitchTiles="stitch" result="f1">
+            </feTurbulence>
+            <feColorMatrix type="matrix" values="0 0 0 0 0, 0 0 0 0 0, 0 0 0 0 0, 0 0 0 -1.9 1.7" result="f2">
+            </feColorMatrix>
+            <feComposite operator="in" in2="f2" in="SourceGraphic" result="f3">
+            </feComposite>
+            <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="3" result="noise">
+            </feTurbulence>
+            <feDisplacementMap xChannelSelector="R" yChannelSelector="G" scale="2" in="f3" result="f4">
             </feDisplacementMap>
         </filter>
     </defs>
@@ -98,10 +111,14 @@ def blocks_to_svg(blocks: Iterable[Block], output, debug=0):
     output.write('    <g id="p1" style="display:inline">\n')
     output.write('        <filter id="blurMe"><feGaussianBlur in="SourceGraphic" stdDeviation="10" /></filter>\n')
 
-    for block in blocks:
+    for idx, block in enumerate(blocks):
+
         if isinstance(block, SceneLineItemBlock):
+            output.write(f'        <!-- block idx: {idx} -->\n')
             draw_stroke(block, output, svg_doc_info, debug)
         elif isinstance(block, RootTextBlock):
+            output.write(f'        <!-- block idx: {idx} -->\n')
+            print("WARNING: Rendering notes with text in them is not yet supported. Layout will be incorrect.")
             draw_text(block, output, svg_doc_info, debug)
         else:
             if debug > 0:
@@ -133,18 +150,16 @@ def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: 
     # initiate the pen
     pen = Pen.create(item.tool.value, item.color.value, item.thickness_scale)
 
+
+    filter = ""
+    if item.tool.name == 'MECHANICAL_PENCIL_2':
+        filter = ' filter="url(#mechPencilTexture)" '
+    elif item.tool.name ==  'PENCIL_2':
+        filter = ' filter="url(#pencilTexture)" '
+
     # BEGIN stroke
     output.write(f'        <!-- Stroke tool: {item.tool.name} color: {item.color.name} ({item.color.value}) thickness_scale: {item.thickness_scale} -->\n')
-    
-    if item.tool.name in set(['PENCIL_2', 'MECHANICAL_PENCIL_2']):
-        output.write('<g filter="url(#pencilTexture)">')
-    else:
-        output.write('<g>')
-
-    output.write('        <polyline ')
-    output.write(f'style="fill:none;stroke:{pen.stroke_color};stroke-width:{pen.stroke_width};opacity:{pen.stroke_opacity}" ')
-    output.write(f'stroke-linecap="{pen.stroke_linecap}" stroke-linejoin="{pen.stroke_linejoin}" ')
-    output.write('points="')
+    output.write('<g>')
 
     last_xpos = -1.
     last_ypos = -1.
@@ -162,7 +177,8 @@ def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: 
         # else:
         #    xpos = (xpos * svg_doc_info.width) / 1404
         #    ypos = (1 / ratio) * (ypos * svg_doc_info.height) / 1872
-        # process segment-origination points
+        
+        # start a new polyline
         if point_id % pen.segment_length == 0:
             segment_color = pen.get_segment_color(point.speed, point.direction, point.width, point.pressure, last_segment_width)
             segment_width = pen.get_segment_width(point.speed, point.direction, point.width, point.pressure, last_segment_width)
@@ -170,15 +186,14 @@ def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: 
             # print(segment_color, segment_width, segment_opacity, pen.stroke_linecap)
             # UPDATE stroke
             output.write('"/>\n')
-            output.write('        <polyline ')
+            output.write('        <polyline ' + filter)
             output.write(f'style="fill:none; stroke:{segment_color} ;stroke-width:{segment_width:.3f};opacity:{segment_opacity}" ')
             output.write(f'stroke-linecap="{pen.stroke_linecap}" stroke-linejoin="{pen.stroke_linejoin}" ')
             output.write('points="')
-            if last_xpos != -1.:
-                # Join to previous segment
-                output.write(f'{last_xpos:.3f},{last_ypos:.3f} ')
-        else:
-            segment_width = last_segment_width
+
+        if last_xpos != -1.:
+            # Join to previous polyline segment
+            output.write(f'{last_xpos:.3f},{last_ypos:.3f} ')
         
         # store the last position
         last_xpos = xpos
@@ -192,7 +207,7 @@ def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: 
     output.write('" /></g>\n')
 
 
-def draw_text(block, output, svg_doc_info, debug):
+def draw_text(block: RootTextBlock, output, svg_doc_info, debug):
     if debug > 0:
         print('----RootTextBlock')
     # a RootTextBlock contains text
@@ -205,13 +220,22 @@ def draw_text(block, output, svg_doc_info, debug):
     output.write('            }\n')
     output.write('        </style>\n')
 
-    for text_item in block.text_items:
+    text = block.value
+
+    # doc = TextDocument.from_scene_item(block.value)
+    # for p in doc.contents:
+    #     print(p)
+
+    # actual_text = ''.join([x.value for x in block.value.items if x.value is not None])
+    # print(actual_text)
+
+    for text_item in text.items.sequence_items():
         # BEGIN text
         # https://developer.mozilla.org/en-US/docs/Web/SVG/Element/text
-        xpos = block.pos_x + svg_doc_info.width / 2
-        ypos = block.pos_y + svg_doc_info.height / 2
+        xpos = block.value.pos_x + svg_doc_info.width / 2
+        ypos = block.value.pos_y + svg_doc_info.height / 2
         output.write(f'        <!-- TextItem item_id: {text_item.item_id} -->\n')
-        if text_item.text.strip():
+        if text_item.value.strip():
             output.write(f'        <text x="{xpos}" y="{ypos}" class="default">{text_item.text.strip()}</text>\n')
 
 

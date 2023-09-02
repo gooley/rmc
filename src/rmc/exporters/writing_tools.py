@@ -169,15 +169,19 @@ class Pencil(Pen):
         self.name = "Pencil"
 
     def get_segment_width(self, speed, direction, width, pressure, last_width):
-        segment_width = 0.7 * ((((0.8*self.base_width) + (0.5 * pressure / 255)) * (width / 4)) - (0.25 * self.direction_to_tilt(direction)**1.8) - (0.6 * (speed / 4) / 50))
-        # segment_width = 1.3*(((self.base_width * 0.4) * pressure) - 0.5 * ((self.direction_to_tilt(direction) ** 0.5)) + (0.5 * last_width))
-        max_width = self.base_width * 10
-        segment_width = segment_width if segment_width < max_width else max_width
+        segment_width = width / 6
         return segment_width
 
     def get_segment_opacity(self, speed, direction, width, pressure, last_width):
-        segment_opacity = (0.1 * - ((speed / 4) / 35)) + (1 * pressure / 255)
-        segment_opacity = self.cutoff(segment_opacity) - 0.1
+        # opacity is primarily based on pressure - but min is 0.2
+        segment_opacity = max(pressure / 200, 0.2)
+
+        # but larger pencils have less opacity
+        segment_opacity = segment_opacity * max((1 - width / 200), 0.1)
+
+        # pow it to intensify the effect at the extremes
+        segment_opacity = segment_opacity ** 1.5
+
         return segment_opacity
 
 
