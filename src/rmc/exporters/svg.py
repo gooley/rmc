@@ -24,11 +24,14 @@ from rmscene import (
     TreeNodeBlock,
     SceneGroupItemBlock,
     SceneLineItemBlock,
+    SceneGlyphItemBlock
 )
+from rmscene.scene_items import GlyphRange
 from rmscene.text import TextDocument
 
 from .writing_tools import (
     Pen,
+    remarkable_palette
 )
 
 _logger = logging.getLogger(__name__)
@@ -111,28 +114,59 @@ def blocks_to_svg(blocks: Iterable[Block], output, debug=0):
     output.write('    <g id="p1" style="display:inline">\n')
     output.write('        <filter id="blurMe"><feGaussianBlur in="SourceGraphic" stdDeviation="10" /></filter>\n')
 
-    for idx, block in enumerate(blocks):
 
+    # draw some debug registration lines
+
+    # vertical centerline
+    output.write(f'        <line x1="{svg_doc_info.width / 2}" y1="0" x2="{svg_doc_info.width / 2}" y2="{svg_doc_info.height}" stroke="red" stroke-width="1"/>\n')
+
+    for idx, block in enumerate(blocks):
         if isinstance(block, SceneLineItemBlock):
-            output.write(f'        <!-- block idx: {idx} -->\n')
+            # output.write(f'        <!-- block idx: {idx} -->\n')
             draw_stroke(block, output, svg_doc_info, debug)
         elif isinstance(block, RootTextBlock):
-            output.write(f'        <!-- block idx: {idx} -->\n')
+            # output.write(f'        <!-- block idx: {idx} -->\n')
             print("WARNING: Rendering notes with text in them is not yet supported. Layout will be incorrect.")
             draw_text(block, output, svg_doc_info, debug)
+        elif isinstance(block, SceneGlyphItemBlock):
+            # output.write(f'        <!-- block idx: {idx} -->\n')
+            draw_highlight(block, output, svg_doc_info, debug)
+        elif isinstance(block, PageInfoBlock):
+            print(block)
         else:
-            if debug > 0:
-                print(f'warning: not converting block: {block.__class__}')
+            print(f'warning: not converting block: {block.__class__}')
 
     # Overlay the page with a clickable rect to flip pages
     output.write('\n')
     output.write('        <!-- clickable rect to flip pages -->\n')
-    output.write(f'        <rect x="0" y="0" width="{svg_doc_info.width}" height="{svg_doc_info.height}" fill-opacity="0"/>\n')
+    # output.write(f'        <rect x="0" y="0" width="{svg_doc_info.width}" height="{svg_doc_info.height}" fill-opacity="0"/>\n')
     # Closing page group
     output.write('    </g>\n')
     # END notebook
     output.write('</svg>\n')
 
+def draw_highlight(block: SceneGlyphItemBlock, output: TextIOWrapper, svg_doc_info: SvgDocInfo, debug: bool):
+    
+    item: GlyphRange = block.item.value
+    
+    if item:
+        output.write(f'        <!-- SceneGlyphItemBlock (highlighter) item_id: {block.item.item_id} -->\n')
+
+        print(f"GlyphRange: {item.length}, {item.color.name} ({item.color.value}), '{item.text}', {item.color}, {item.rectangles[0]}")
+
+        color_values = remarkable_palette[item.color.value]
+        color = "rgb" + str(tuple(color_values))
+        rectangle = item.rectangles[0]
+        xpos = rectangle.x + svg_doc_info.xpos_delta
+        ypos = rectangle.y + svg_doc_info.ypos_delta
+        
+        output.write(f'        <rect x="{xpos}" y="{ypos}" width="{rectangle.w}" height="{rectangle.h}" style="fill:{color};fill-opacity:0.5"/>\n')
+
+        # rendering the highlighted text (usually not what we want)
+        # cleantext = item.text.replace('"', "'")
+        # output.write(f'        <text x="{xpos}" y="{ypos}" textLength="{rectangle.w}" fill="black">{cleantext}</text>\n')
+        
+    pass
 
 def draw_stroke(block: SceneLineItemBlock, output: TextIOWrapper, svg_doc_info: SvgDocInfo, debug: bool):
     if debug > 0:
@@ -245,6 +279,8 @@ def get_limits(blocks):
     for block in blocks:
         if isinstance(block, SceneLineItemBlock):
             xmin_tmp, xmax_tmp, ymin_tmp, ymax_tmp = get_limits_stroke(block)
+        elif isinstance(block, SceneGlyphItemBlock):
+            xmin_tmp, xmax_tmp, ymin_tmp, ymax_tmp = get_limits_highlight(block)
         # text blocks use a different xpos/ypos coordinate system
         #elif isinstance(block, RootTextBlock):
         #    xmin_tmp, xmax_tmp, ymin_tmp, ymax_tmp = get_limits_text(block)
@@ -262,6 +298,18 @@ def get_limits(blocks):
             ymax = ymax_tmp
     return xmin, xmax, ymin, ymax
 
+def get_limits_highlight(block: SceneGlyphItemBlock):
+    item: GlyphRange = block.item.value
+    
+    if item:
+        rectangle = item.rectangles[0]
+        xmin = rectangle.x
+        xmax = rectangle.x + rectangle.w
+        ymin = rectangle.y
+        ymax = rectangle.y + rectangle.h
+    else:
+        xmin = xmax = ymin = ymax = None
+    return xmin, xmax, ymin, ymax
 
 def get_limits_stroke(block):
     # make sure the object is not empty
@@ -293,20 +341,38 @@ def get_limits_text(block):
 def get_dimensions(blocks, debug):
     # get block limits
     xmin, xmax, ymin, ymax = get_limits(blocks)
-    if debug > 0:
+    if debug >= 0:
         print(f"xmin: {xmin} xmax: {xmax} ymin: {ymin} ymax: {ymax}")
+
+    width = math.ceil(xmax - xmin if xmin is not None and xmax is not None else 0)
+    height = math.ceil(ymax - ymin if ymin is not None and ymax is not None else 0)
+
     # {xpos,ypos} coordinates are based on the top-center point
     # of the doc **iff there are no text boxes**. When you add
     # text boxes, the xpos/ypos values change.
-    xpos_delta = XPOS_SHIFT
-    if xmin is not None and (xmin + XPOS_SHIFT) < 0:
-        # make sure there are no negative xpos
-        xpos_delta += -(xmin + XPOS_SHIFT)
+    xpos_delta = max(XPOS_SHIFT, width/2.0)
+
+    # if xmin is not None and (xmin + XPOS_SHIFT) < 0:
+    #     # make sure there are no negative xpos
+    #     xpos_delta += -(xmin + XPOS_SHIFT)
+
     #ypos_delta = SCREEN_HEIGHT / 2
     ypos_delta = 0
+
+    if ymin < 0:
+        # make sure there are no negative ypos
+        # ypos_delta += -ymin
+
+        # trim the page height to remove the negative stuff
+        height += ymin
+
     # adjust dimensions if needed
-    width = int(math.ceil(max(SCREEN_WIDTH, xmax - xmin if xmin is not None and xmax is not None else 0)))
-    height = int(math.ceil(max(SCREEN_HEIGHT, ymax - ymin if ymin is not None and ymax is not None else 0)))
-    if debug > 0:
+    
+    
+    # width = int(max(SCREEN_WIDTH, width))
+    # height = int(max(SCREEN_HEIGHT, height))
+    
+    if debug >= 0:
         print(f"height: {height} width: {width} xpos_delta: {xpos_delta} ypos_delta: {ypos_delta}")
+    
     return SvgDocInfo(height=height, width=width, xpos_delta=xpos_delta, ypos_delta=ypos_delta)

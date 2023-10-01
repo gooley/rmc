@@ -40,6 +40,21 @@ def cli(verbose, from_, to, output, input):
         logging.basicConfig(level=logging.WARNING)
 
     input = [Path(p) for p in input]
+    # input = [
+    #     Path(
+    #         # habitats learnings text page (mostly text, some drawing)
+    #         #"/Users/gooley/working/src/gooley/remarkable/notes/data/93a5b8ca-ccc7-4f37-8782-1af7c3756267/6639bf16-d7d0-4f3e-bf91-fa9042097bf8.rm"
+
+    #         # renote relevance sketch (all drawings, but has a blank text layer)
+    #         #"/Users/gooley/working/src/gooley/remarkable/notes/data/5b773e75-ce0f-43f4-bb9d-be855650b338/07daec7c-1c30-454f-80fb-92c9406d7bc1.rm"
+
+    #         # rwe workshop notes (long drawings page, no text layer)
+    #         # "/Users/gooley/working/src/gooley/remarkable/notes/data/744f38c9-84a1-4ab1-ae5f-b0a9a1c0c9fc/2e0f38ec-90ed-4981-beb6-e06e4e163596.rm"
+
+    #         # intern talk notes
+    #         #"/Users/gooley/working/src/gooley/remarkable/notes/data/82bbce98-56db-4610-ada6-13ede982028e/effef2d6-c1ff-436f-9b79-72722c77f75b.rm"
+    #     )
+    # ]
     if output is not None:
         output = Path(output)
 
@@ -57,9 +72,7 @@ def cli(verbose, from_, to, output, input):
             for fn in input:
                 convert_rm(Path(fn), to, fout)
     elif from_ == "markdown":
-        text = "".join(
-            Path(fn).read_text() for fn in input
-        )
+        text = "".join(Path(fn).read_text() for fn in input)
         with open_output(to, output) as fout:
             convert_text(text, fout)
     else:
